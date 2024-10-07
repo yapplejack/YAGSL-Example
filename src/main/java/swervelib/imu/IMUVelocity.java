@@ -4,12 +4,15 @@ import edu.wpi.first.hal.HALUtil;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.Notifier;
 import swervelib.math.IMULinearMovingAverageFilter;
+import swervelib.simulation.SwerveIMUSimulation;
+import swervelib.telemetry.SwerveDriveTelemetry;
 
 public class IMUVelocity {
   /**
    * Swerve IMU.
    */
-  private final SwerveIMU gyro;
+  private SwerveIMU gyro;
+  private SwerveIMUSimulation simGyro;
   /**
    * Linear filter used to calculate velocity, we use a custom filter class
    * to prevent unwanted operations.
@@ -51,6 +54,15 @@ public class IMUVelocity {
   public IMUVelocity(SwerveIMU gyro, double periodSeconds, int averagingTaps)
   {
     this.gyro = gyro;
+    velocityFilter = new IMULinearMovingAverageFilter(averagingTaps);
+    notifier = new Notifier(this::update);
+    notifier.startPeriodic(periodSeconds);
+    timestamp = HALUtil.getFPGATime();
+  }
+
+  public IMUVelocity(SwerveIMUSimulation gyro, double periodSeconds, int averagingTaps)
+  {
+    this.simGyro = gyro;
     velocityFilter = new IMULinearMovingAverageFilter(averagingTaps);
     notifier = new Notifier(this::update);
     notifier.startPeriodic(periodSeconds);
@@ -112,16 +124,25 @@ public class IMUVelocity {
   private void update() 
   {
     double newTimestamp = HALUtil.getFPGATime();
-    Rotation2d newPosition = Rotation2d.fromRadians(gyro.getRotation3d().getZ());
+    Rotation2d newPosition;
+    if(SwerveDriveTelemetry.isSimulation)
+    {
+      newPosition = Rotation2d.fromRadians(simGyro.getGyroRotation3d().getZ());
+    }
+    else
+    {
+      newPosition = Rotation2d.fromRadians(gyro.getRotation3d().getZ());
+    }
 
-    synchronized (this) {
-      if (!firstCycle) {
+    //synchronized (this) {
+      if (!firstCycle) 
+      {
         velocityFilter.addValue((newPosition.minus(position).getRadians()) / (newTimestamp - timestamp));
-        }
+      }
       firstCycle = false;
       timestamp = newTimestamp;
       position = newPosition;
-    }
+    //}
   }
 
   /**
@@ -130,7 +151,7 @@ public class IMUVelocity {
    *
    * @return robot's angular velocity in rads/s as a double.
    */
-  public synchronized double getVelocity() {
+  public double getVelocity() {
     velocity = velocityFilter.calculate();
     return velocity * 1e+6;
   }
